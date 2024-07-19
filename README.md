@@ -19,10 +19,17 @@ Histograms: Showed variable distributions and highlighted skewness and outliers 
 ## Methodology
 We split the dataset into training (2008-2013) and test (2014-2017) sets. Models tested:
 
-### LDA & QDA: Linear and Quadratic Discriminant Analysis.
-### Logistic Regression: Used a cutoff of 0.5.
-### Lasso & Ridge Regression: Applied shrinkage penalties with optimal λ values.
-### Random Forest: An ensemble method combining multiple decision trees.
+### LDA & QDA: 
+Linear and Quadratic Discriminant Analysis.
+
+### Logistic Regression: 
+Used a cutoff of 0.5.
+
+### Lasso & Ridge Regression: 
+Applied shrinkage penalties with optimal λ values.
+
+### Random Forest:
+An ensemble method combining multiple decision trees.
 
 ## Conclusion
 Model accuracies were similar across methods:
