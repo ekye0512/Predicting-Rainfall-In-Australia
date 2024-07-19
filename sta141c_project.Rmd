@@ -1,0 +1,236 @@
+---
+title: "STA 141C Project"
+author: "Ryan Cosgrove, Eric Kye, Ravinit Chand, Revanth Rao"
+date: "2024-05-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_knit$set(root.dir = "C:/Users/cosgr/OneDrive/Documents/STA 141C")
+library(dplyr)
+library(glmnet)
+library(randomForest)
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+library(caret)
+library(xgboost)
+library(nnet)
+library(e1071)
+library(kernlab)
+```
+
+
+# Logistic Regression Model
+```{r}
+weather = read.csv("weatherAUS.csv")
+```
+
+```{r}
+weather = weather %>% mutate_at(c('WindGustDir', 'WindDir9am', 'WindDir3pm', 
+                                  'RainToday', 'RainTomorrow'), as.factor)
+weather$Year = as.integer(sapply(strsplit(weather[,1], "-"), getElement, 1))
+summary(weather)
+
+```
+
+Use a training set that has data from before 2013 and a test set with data after 2013. We remove the variables `WindGustDir`, `WindDir9am`, `WindDir3pm` that just tells us the wind direction at certain times and then generate a GLM Regression model on the training set with the remaining variables and use it to predict if it is going to Rain tomorrow on the Test Set.
+```{r}
+
+train_index = (weather$Year < 2013)
+test_index = !train_index
+
+train = weather[train_index, ]
+test = weather[test_index, ]
+
+# Remove columns
+train = train[, c(-1, -2, -8, -10, -11, -24)]
+test = test[, c(-1, -2, -8, -10, -11, -24)]
+
+# Remove NAs
+train = na.omit(train)
+test = na.omit(test)
+
+RainTom.test <- test$RainTomorrow
+
+# GLM Model
+glm.fits <- glm(RainTomorrow ~ ., data = train, family = binomial)
+glm.fits
+glm.probs <- predict(glm.fits, test, type = "response")
+
+```
+
+
+```{r}
+glm.pred <- rep("No", length(glm.probs))
+glm.pred[glm.probs > .5] <- "Yes"
+table(glm.pred, RainTom.test)
+mean(glm.pred == RainTom.test)
+mean(glm.pred != RainTom.test)
+
+
+```
+
+
+
+# Linear Discriminant Analysis
+```{r}
+lda.fit <- lda(RainTomorrow ~ ., data = train)
+lda.fit
+plot(lda.fit)
+
+lda.pred <- predict(lda.fit, test)
+
+lda.class <- lda.pred$class
+table(lda.class, RainTom.test)
+mean(lda.class == RainTom.test)
+###
+sum(lda.pred$posterior[, 1] >= .5)
+sum(lda.pred$posterior[, 1] < .5)
+###
+lda.pred$posterior[1:20, 1]
+lda.class[1:20]
+###
+sum(lda.pred$posterior[, 1] > .9)
+
+
+```
+# Quadratic Discriminant Analysis
+```{r}
+qda.fit <- qda(RainTomorrow ~ ., data = train)
+qda.fit
+qda.class <- predict(qda.fit, test)$class
+table(qda.class, RainTom.test)
+mean(qda.class == RainTom.test)
+
+
+```
+# Lasso Regression
+
+```{r}
+
+# Recreate x and y after removing NA rows from train and test
+x <- model.matrix(RainTomorrow ~ ., rbind(train, test))[,-1]
+y <- as.numeric(rbind(train, test)$RainTomorrow) - 1
+
+train_rows <- 1:nrow(train)
+test_rows <- (nrow(train) + 1):nrow(x)
+
+lasso.fit <- cv.glmnet(x[train_rows, ], y[train_rows], family = "binomial", alpha = 1)
+plot(lasso.fit)
+lasso.pred <- predict(lasso.fit, s = "lambda.min", newx = x[test_rows, ], type = "class")
+table(lasso.pred, RainTom.test)
+mean(lasso.pred == RainTom.test)
+
+
+```
+# Ridge Regression 
+```{r}
+ridge.fit <- cv.glmnet(x[train_rows, ], y[train_rows], family = "binomial", alpha = 0)
+plot(ridge.fit)
+ridge.pred <- predict(ridge.fit, s = "lambda.min", newx = x[test_rows, ], type = "class")
+table(ridge.pred, RainTom.test)
+mean(ridge.pred == RainTom.test)
+
+
+```
+
+# Random Forest
+```{r}
+rf.fit <- randomForest(RainTomorrow ~ ., data = train)
+rf.pred <- predict(rf.fit, newdata = test)
+table(rf.pred, RainTom.test)
+mean(rf.pred == RainTom.test)
+
+# Variable Importance Plot
+varImpPlot(rf.fit)
+
+
+```
+```{r}
+# Plot GLM Predictions
+glm_pred_plot <- ggplot(data = test, aes(x = glm.probs, fill = RainTom.test)) +
+  geom_histogram(binwidth = 0.1, position = "dodge") +
+  labs(title = "GLM Predictions", x = "Predicted Probability", y = "Count")
+
+# Plot LDA Predictions
+lda_pred_plot <- ggplot(data = test, aes(x = lda.pred$posterior[,1], fill = RainTom.test)) +
+  geom_histogram(binwidth = 0.1, position = "dodge") +
+  labs(title = "LDA Predictions", x = "Posterior Probability", y = "Count")
+
+# Arrange plots
+grid.arrange(glm_pred_plot, lda_pred_plot, ncol = 2)
+```
+# Decision Trees
+
+
+```{r}
+tree.fit <- train(RainTomorrow ~ ., data = train, method = "rpart")
+tree.pred <- predict(tree.fit, newdata = test)
+table(tree.pred, RainTom.test)
+mean(tree.pred == RainTom.test)
+
+```
+# Support Vector Machines
+
+
+```{r}
+svm.fit <- train(RainTomorrow ~ ., data = train, method = "svmRadial")
+svm.pred <- predict(svm.fit, newdata = test)
+table(svm.pred, RainTom.test)
+mean(svm.pred == RainTom.test)
+```
+
+# k-Nearest Neighbors
+```{r} 
+knn.fit <- train(RainTomorrow ~ ., data = train, method = "knn")
+knn.pred <- predict(knn.fit, newdata = test)
+table(knn.pred, RainTom.test)
+mean(knn.pred == RainTom.test)
+
+```
+
+# Gradient Boosting Machines
+```{r}
+gbm.fit <- train(RainTomorrow ~ ., data = train, method = "gbm", verbose = FALSE)
+gbm.pred <- predict(gbm.fit, newdata = test)
+table(gbm.pred, RainTom.test)
+mean(gbm.pred == RainTom.test)
+
+```
+# Xg-Boost
+```{r}
+xgb.fit <- train(RainTomorrow ~ ., data = train, method = "xgbTree")
+xgb.pred <- predict(xgb.fit, newdata = test)
+table(xgb.pred, RainTom.test)
+mean(xgb.pred == RainTom.test)
+```
+# Neural Networks
+```{r}
+nn.fit <- train(RainTomorrow ~ ., data = train, method = "nnet", trace = FALSE)
+nn.pred <- predict(nn.fit, newdata = test)
+table(nn.pred, RainTom.test)
+mean(nn.pred == RainTom.test)
+
+```
+```{r}
+# Plot Predictions
+models <- list(GLM = glm.pred, LDA = lda.class, QDA = qda.class, 
+               Lasso = lasso.pred, Ridge = ridge.pred, RF = rf.pred, 
+               Tree = tree.pred, SVM = svm.pred, KNN = knn.pred, 
+               GBM = gbm.pred, XGBoost = xgb.pred, NN = nn.pred)
+
+results <- lapply(models, function(pred) data.frame(Model = names(pred), Prediction = pred, Actual = RainTom.test))
+
+plot_list <- lapply(names(results), function(model) {
+  ggplot(results[[model]], aes(x = Prediction, fill = Actual)) +
+    geom_histogram(binwidth = 0.1, position = "dodge") +
+    labs(title = paste(model, "Predictions"), x = "Predicted Probability", y = "Count")
+})
+
+do.call(grid.arrange, c(plot_list, ncol = 2))
+
+```
+
+
+
